@@ -1,0 +1,24 @@
+# renv: keep activate.R + settings, ignore the project library/cache
+renv/library/
+renv/local/
+renv/cache/
+renv/staging/
+renv/python/
+renv/sandbox/
+
+# R session cruft
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# app scratch / runtime artifacts
+.cache/
+tmp_*.R
+*.docx
+!www/*.docx
+
+# secrets — never commit a key
+.Renviron
+.env

@@ -91,3 +91,17 @@ run_render_tlfs <- function(ars_path, ard, file, output_ids = NULL, log = NULL,
                                  length(rendered), basename(file)))
   list(file = file, rendered = rendered)
 }
+
+## ---- Stage 4 (full): render ALL outputs via arsbridge::ars_render_all -------
+## Tables + listings + figures into one Word document, returning the coverage
+## manifest. Requires adam_dir (for listings/figures).
+run_render_all <- function(ars_path, ard, adam_dir, file, log = NULL,
+                           progress = NULL) {
+  if (!is.null(log)) log("Rendering all outputs (tables + listings + figures) to Word...")
+  manifest <- arsbridge::ars_render_all(ars_path, ard, adam_dir = adam_dir,
+                                        file = file, progress = progress)
+  n_ok <- sum(manifest$status == "rendered")
+  if (!is.null(log)) log(sprintf("Rendered %d of %d outputs into %s",
+                                 n_ok, nrow(manifest), basename(file)))
+  list(file = file, manifest = manifest)
+}

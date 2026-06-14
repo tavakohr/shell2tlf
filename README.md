@@ -68,19 +68,20 @@ excludes secrets. Close the app and it is gone.
 
 ## Current coverage (honest status)
 
-`shell2tlf` renders every **table** output that `arsbridge` can currently
-execute. On the bundled 40-output example that is the supported summary tables
-(disposition, demographics, exposure, AE, efficacy counts). Known gaps, tracked
-as the `arsbridge` roadmap:
+`shell2tlf` renders **tables, listings, and figures** into one Word document via
+`arsbridge::ars_render_all()`, and shows a coverage manifest after Step 5. On the
+bundled 40-output example it renders **29 of 40** outputs (14 tables + 10
+listings + 5 figures). The remaining outputs are reported in the manifest with a
+reason:
 
-- **Some table shells produce no rows** — a few analyses are skipped in
-  `ars_to_ard()` (variable-not-found / unsupported shapes).
-- **By-visit / by-parameter continuous tables** can show blank cells — row
-  grouping in `ars_to_tfrmt()` does not yet split rows by analysis/subset.
-- **Listings (`L_*`)** and **figures (`F_*`)** are not yet rendered — they need
-  dedicated renderers.
+- **~10 table shells produce no rows** — their analyses reference ADaM variables
+  that the bundled simulated data does not contain (e.g. baseline disease
+  characteristics, some efficacy endpoints). A complete study ADaM cut renders
+  them; the manifest says exactly which variable is missing.
+- **Forest-plot figures** are not rendered from raw data — they need fitted
+  effect estimates with confidence intervals.
 
-The app reports exactly which outputs it rendered after Step 5.
+The manifest (`output_id`, `type`, `status`, `reason`) makes coverage explicit.
 
 ---
 

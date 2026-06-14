@@ -148,15 +148,19 @@ ui <- page_sidebar(
     nav_panel("s5", value = "s5",
       card(card_header("Step 5 — Render formatted TLFs to Word"),
         card_body(
-          uiOutput("output_picker"),
+          p("Renders every output -- tables, listings, and figures -- into one ",
+            "landscape Word document, and reports which rendered."),
           div(class = "mt-2",
-            actionButton("run_render", "Render selected TLFs → .docx",
+            actionButton("run_render", "Render all outputs → .docx",
                          icon = icon("file-word"), class = "btn-primary"),
             downloadButton("dl_docx", "Download Word document",
                            class = "btn-success")),
+          uiOutput("render_summary"),
           hr(),
-          h6("Preview (first selected output)"),
-          uiOutput("tlf_preview")
+          navset_tab(
+            nav_panel("Coverage manifest", DT::DTOutput("manifest_tbl")),
+            nav_panel("Preview (first table)", uiOutput("tlf_preview"))
+          )
         )
       ),
       actionButton("back_s4", "← Back")
@@ -177,7 +181,7 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     shell = NULL, spec = NULL, data_zip = NULL, sap = NULL, empty = NULL,
     adam_dir = NULL, key_ok = FALSE, ars_path = NULL, validation = NULL,
-    ard = NULL, exec = NULL, output_ids = NULL, docx = NULL, rendered = NULL,
+    ard = NULL, exec = NULL, output_ids = NULL, docx = NULL, manifest = NULL,
     log = character(0), step = 1L
   )
   addlog <- function(...) {
@@ -348,35 +352,43 @@ server <- function(input, output, session) {
     req(rv$exec$diagnostics); DT::datatable(rv$exec$diagnostics, options = list(pageLength = 8, scrollX = TRUE))
   })
 
-  ## ---- Stage 4: render TLFs ----
-  output$output_picker <- renderUI({
-    req(rv$output_ids)
-    tbl_ids <- rv$output_ids[grepl("^T", rv$output_ids, ignore.case = TRUE)]
-    checkboxGroupInput("pick_outputs", "Table outputs to render",
-                       choices = tbl_ids, selected = tbl_ids, inline = TRUE)
-  })
-
+  ## ---- Stage 4: render every output (tables + listings + figures) ----
   observeEvent(input$run_render, {
-    req(rv$ars_path, rv$ard, input$pick_outputs)
-    file <- file.path(out_dir, "shell2tlf_tables.docx")
-    withProgress(message = "Rendering TLFs to Word...", value = 0, {
+    req(rv$ars_path, rv$ard, rv$adam_dir)
+    file <- file.path(out_dir, "shell2tlf_all.docx")
+    withProgress(message = "Rendering all outputs to Word...", value = 0, {
       tryCatch({
-        n <- length(input$pick_outputs)
-        res <- run_render_tlfs(rv$ars_path, rv$ard, file,
-          output_ids = input$pick_outputs, log = addlog,
+        res <- run_render_all(rv$ars_path, rv$ard, rv$adam_dir, file, log = addlog,
           progress = function(i, total, oid)
             setProgress(i / total, detail = sprintf("%s (%d/%d)", oid, i, total)))
-        rv$docx <- res$file; rv$rendered <- res$rendered
-        showNotification(sprintf("Rendered %d table(s) to Word.", length(res$rendered)),
-                         type = "message")
+        rv$docx <- res$file; rv$manifest <- res$manifest
+        n_ok <- sum(res$manifest$status == "rendered")
+        showNotification(sprintf("Rendered %d of %d outputs to Word.",
+                                 n_ok, nrow(res$manifest)), type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("Render failed:", conditionMessage(e)), type = "error") })
     })
   })
 
+  output$render_summary <- renderUI({
+    req(rv$manifest)
+    n_ok <- sum(rv$manifest$status == "rendered")
+    div(class = "alert alert-info small mt-2",
+        sprintf("Rendered %d of %d outputs (%s).", n_ok, nrow(rv$manifest),
+                paste(names(table(rv$manifest$type[rv$manifest$status=="rendered"])),
+                      table(rv$manifest$type[rv$manifest$status=="rendered"]),
+                      collapse = ", ")))
+  })
+
+  output$manifest_tbl <- DT::renderDT({
+    req(rv$manifest)
+    DT::datatable(rv$manifest, options = list(pageLength = 12, scrollX = TRUE))
+  })
+
   output$tlf_preview <- renderUI({
-    req(rv$ars_path, rv$ard, input$pick_outputs)
-    oid <- input$pick_outputs[1]
+    req(rv$ars_path, rv$ard, rv$output_ids)
+    oid <- rv$output_ids[grepl("^T", rv$output_ids, ignore.case = TRUE)][1]
+    if (is.na(oid)) return(div(class = "text-muted small", "No table to preview."))
     gt_tbl <- tryCatch(arsbridge::ars_render_tlf(rv$ars_path, rv$ard, oid),
                        error = function(e) NULL)
     if (is.null(gt_tbl)) return(div(class = "text-muted small", "No preview available."))
@@ -384,7 +396,7 @@ server <- function(input, output, session) {
   })
 
   output$dl_docx <- downloadHandler(
-    filename = function() "shell2tlf_tables.docx",
+    filename = function() "shell2tlf_all_tlfs.docx",
     content = function(file) { req(rv$docx); file.copy(rv$docx, file) })
 }
 

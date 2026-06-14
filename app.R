@@ -249,7 +249,7 @@ server <- function(input, output, session) {
     shell = NULL, spec = NULL, data_zip = NULL, sap = NULL, empty = NULL,
     adam_dir = NULL, key_ok = FALSE, ars_path = NULL, validation = NULL,
     ard = NULL, exec = NULL, output_ids = NULL, docx = NULL, manifest = NULL,
-    indiv = NULL, log = character(0), step = 1L
+    indiv = NULL, combine_dir = NULL, log = character(0), step = 1L
   )
   addlog <- function(...) {
     rv$log <- c(rv$log, unlist(list(...)))
@@ -262,7 +262,8 @@ server <- function(input, output, session) {
       isTRUE(rv$key_ok),
       !is.null(rv$ars_path),
       !is.null(rv$ard),
-      !is.null(rv$docx)
+      !is.null(rv$docx),
+      !is.null(rv$combine_dir)
     )
     tags$ul(class = "list-unstyled",
       lapply(seq_along(STEPS), function(i) {

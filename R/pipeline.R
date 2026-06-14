@@ -92,14 +92,32 @@ run_render_tlfs <- function(ars_path, ard, file, output_ids = NULL, log = NULL,
   list(file = file, rendered = rendered)
 }
 
+## List every output in the ARS spec with its kind + label, for the picker.
+list_spec_outputs <- function(ars_path) {
+  spec <- jsonlite::fromJSON(ars_path, simplifyVector = FALSE)
+  sc <- function(x) if (is.null(x)) NA_character_ else as.character(unlist(x)[1])
+  kind <- function(id, ot) {
+    ot <- toupper(ot %||% "")
+    if (ot == "LISTING" || grepl("^L", id)) return("listing")
+    if (ot == "FIGURE"  || grepl("^F", id)) return("figure")
+    "table"
+  }
+  do.call(rbind, lapply(spec[["outputs"]], function(o) {
+    id <- sc(o[["id"]])
+    data.frame(id = id, type = kind(id, sc(o[["outputType"]])),
+               label = sc(o[["label"]]) %||% id, stringsAsFactors = FALSE)
+  }))
+}
+
 ## ---- Stage 4 (full): render ALL outputs via arsbridge::ars_render_all -------
 ## Tables + listings + figures into one Word document, returning the coverage
 ## manifest. Requires adam_dir (for listings/figures).
-run_render_all <- function(ars_path, ard, adam_dir, file, log = NULL,
-                           progress = NULL) {
-  if (!is.null(log)) log("Rendering all outputs (tables + listings + figures) to Word...")
+run_render_all <- function(ars_path, ard, adam_dir, file, output_ids = NULL,
+                           log = NULL, progress = NULL) {
+  if (!is.null(log)) log("Rendering selected outputs (tables + listings + figures) to Word...")
   manifest <- arsbridge::ars_render_all(ars_path, ard, adam_dir = adam_dir,
-                                        file = file, progress = progress)
+                                        file = file, output_ids = output_ids,
+                                        progress = progress)
   n_ok <- sum(manifest$status == "rendered")
   if (!is.null(log)) log(sprintf("Rendered %d of %d outputs into %s",
                                  n_ok, nrow(manifest), basename(file)))

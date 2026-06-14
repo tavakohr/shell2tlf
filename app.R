@@ -148,10 +148,11 @@ ui <- page_sidebar(
     nav_panel("s5", value = "s5",
       card(card_header("Step 5 — Render formatted TLFs to Word"),
         card_body(
-          p("Renders every output -- tables, listings, and figures -- into one ",
-            "landscape Word document, and reports which rendered."),
+          p("Choose which outputs to render -- tables, listings, and figures -- ",
+            "into one landscape Word document."),
+          uiOutput("output_picker"),
           div(class = "mt-2",
-            actionButton("run_render", "Render all outputs → .docx",
+            actionButton("run_render", "Render selected → .docx",
                          icon = icon("file-word"), class = "btn-primary"),
             downloadButton("dl_docx", "Download Word document",
                            class = "btn-success")),
@@ -352,13 +353,36 @@ server <- function(input, output, session) {
     req(rv$exec$diagnostics); DT::datatable(rv$exec$diagnostics, options = list(pageLength = 8, scrollX = TRUE))
   })
 
-  ## ---- Stage 4: render every output (tables + listings + figures) ----
+  ## ---- Stage 4: render selected outputs (tables + listings + figures) ----
+  output$output_picker <- renderUI({
+    req(rv$ars_path)
+    outs <- tryCatch(list_spec_outputs(rv$ars_path), error = function(e) NULL)
+    if (is.null(outs)) return(NULL)
+    by_kind <- split(outs, factor(outs$type, levels = c("table","listing","figure")))
+    chk <- function(kind, title) {
+      d <- by_kind[[kind]]; if (is.null(d) || !nrow(d)) return(NULL)
+      ch <- stats::setNames(d$id, paste0(d$id, " — ", d$label))
+      div(class = "mb-2",
+        tags$strong(sprintf("%s (%d)", title, nrow(d))),
+        checkboxGroupInput(paste0("pick_", kind), NULL, choices = ch,
+                           selected = ch, inline = TRUE))
+    }
+    div(
+      div(class = "small text-muted mb-1",
+          "All selected by default. Untick any output to exclude it."),
+      chk("table", "Tables"), chk("listing", "Listings"), chk("figure", "Figures")
+    )
+  })
+
   observeEvent(input$run_render, {
     req(rv$ars_path, rv$ard, rv$adam_dir)
+    picks <- c(input$pick_table, input$pick_listing, input$pick_figure)
+    if (!length(picks)) { showNotification("Select at least one output.", type = "error"); return() }
     file <- file.path(out_dir, "shell2tlf_all.docx")
-    withProgress(message = "Rendering all outputs to Word...", value = 0, {
+    withProgress(message = "Rendering selected outputs to Word...", value = 0, {
       tryCatch({
-        res <- run_render_all(rv$ars_path, rv$ard, rv$adam_dir, file, log = addlog,
+        res <- run_render_all(rv$ars_path, rv$ard, rv$adam_dir, file,
+          output_ids = picks, log = addlog,
           progress = function(i, total, oid)
             setProgress(i / total, detail = sprintf("%s (%d/%d)", oid, i, total)))
         rv$docx <- res$file; rv$manifest <- res$manifest

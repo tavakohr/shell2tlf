@@ -141,6 +141,8 @@ ui <- page_sidebar(
           actionButton("run_ars", "Generate ARS JSON",
                        icon = icon("gears"), class = "btn-primary"),
           downloadButton("dl_ars", "Download ARS JSON", class = "btn-outline-secondary"),
+          downloadButton("dl_code", "Download {cards} code (.zip)",
+                         class = "btn-outline-secondary"),
           hr(),
           navset_tab(
             nav_panel("Validation report", DT::DTOutput("validation_tbl")),
@@ -362,24 +364,29 @@ server <- function(input, output, session) {
     if (!isTRUE(rv$key_ok)) { showNotification("Set your LLM key on Step 2 first.", type = "error"); return() }
     withProgress(message = "Generating ARS JSON (LLM enrichment)...", value = 0.1, {
       tryCatch({
+        dirs <- study_dirs(input$study_id)
         gen <- run_generate_ars(
           shell_path = rv$shell, adam_spec_path = rv$spec,
           provider = input$provider, api_key = input$api_key,
           model = if (nzchar(input$model)) input$model else NULL,
           study_id = input$study_id, study_name = input$study_name,
-          out_dir = out_dir, log = addlog)
+          out_dir = out_dir, sap_path = rv$sap, code_dir = dirs$code,
+          log = addlog)
         rv$ars_path   <- gen$ars_path
         rv$validation <- gen$validation
+        rv$code_dir   <- dirs$code
         addlog(sprintf("ARS ready: %s TLFs, %s analyses, %s warnings.",
                        gen$n_tlfs, gen$n_analyses, gen$n_warnings))
-        ## Persist the ARS spec + validation report to a local study folder.
-        pdir <- local_output_dir(input$study_id)
-        file.copy(gen$ars_path, file.path(pdir, "reporting_event.json"),
+        ## Persist the ARS spec + validation report under the study folder.
+        file.copy(gen$ars_path, file.path(dirs$ars, "reporting_event.json"),
                   overwrite = TRUE)
         if (file.exists(gen$report_path))
-          file.copy(gen$report_path, file.path(pdir, "spec_validation_report.xlsx"),
+          file.copy(gen$report_path,
+                    file.path(dirs$root, "spec_validation_report.xlsx"),
                     overwrite = TRUE)
-        addlog(sprintf("Saved ARS spec to %s", normalizePath(pdir, mustWork = FALSE)))
+        addlog(sprintf("Saved ARS spec to %s/ars and %d cards script(s) to code/",
+                       normalizePath(dirs$root, mustWork = FALSE),
+                       length(gen$code_paths)))
         showNotification("ARS JSON generated.", type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("ARS generation failed:", conditionMessage(e)), type = "error") })
@@ -393,6 +400,14 @@ server <- function(input, output, session) {
   output$dl_ars <- downloadHandler(
     filename = function() "reporting_event.json",
     content = function(file) { req(rv$ars_path); file.copy(rv$ars_path, file) })
+  output$dl_code <- downloadHandler(
+    filename = function() "cards_code.zip",
+    content = function(file) {
+      req(rv$code_dir)
+      fs <- list.files(rv$code_dir, pattern = "\\.R$", full.names = TRUE)
+      validate(need(length(fs) > 0, "No {cards} scripts were emitted."))
+      utils::zip(file, fs, flags = "-j9X")
+    })
 
   ## ---- Stage 3: execute ARD ----
   observeEvent(input$run_ard, {
@@ -405,12 +420,12 @@ server <- function(input, output, session) {
         addlog(sprintf("ARD built: %s rows across %s outputs.",
                        exec$n_rows, length(exec$output_ids)))
         ## Persist the flattened ARD as CSV for inspection.
-        pdir <- local_output_dir(input$study_id)
+        dirs <- study_dirs(input$study_id)
         utils::write.csv(flatten_ard(exec$ard),
-                         file.path(pdir, "ard.csv"), row.names = FALSE)
-        per <- save_ard_per_output(exec$ard, file.path(pdir, "ard"), log = addlog)
+                         file.path(dirs$ard, "_all.csv"), row.names = FALSE)
+        per <- save_ard_per_output(exec$ard, dirs$ard, log = addlog)
         addlog(sprintf("Saved combined ARD + %d per-output ARD(s) under %s",
-                       length(per), file.path(pdir, "ard")))
+                       length(per), dirs$ard))
         showNotification("ARD generated.", type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("ARD execution failed:", conditionMessage(e)), type = "error") })
@@ -471,13 +486,13 @@ server <- function(input, output, session) {
         rv$docx <- res$file; rv$manifest <- res$manifest
         n_ok <- sum(res$manifest$status == "rendered")
         ## Persist combined + per-table .docx to the local study folder.
-        pdir <- local_output_dir(input$study_id)
-        file.copy(res$file, file.path(pdir, "shell2tlf_all.docx"), overwrite = TRUE)
+        dirs <- study_dirs(input$study_id)
+        file.copy(res$file, file.path(dirs$output, "_all.docx"), overwrite = TRUE)
         indiv <- render_each_output_docx(rv$ars_path, rv$ard, rv$adam_dir,
-                   file.path(pdir, "outputs"), output_ids = picks, log = addlog)
+                   dirs$output, output_ids = picks, log = addlog)
         rv$indiv <- indiv
         addlog(sprintf("Saved combined + %d individual output(s) to %s",
-                       length(indiv), normalizePath(pdir, mustWork = FALSE)))
+                       length(indiv), normalizePath(dirs$root, mustWork = FALSE)))
         showNotification(sprintf("Rendered %d of %d outputs to Word.",
                                  n_ok, nrow(res$manifest)), type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
@@ -497,11 +512,14 @@ server <- function(input, output, session) {
                         collapse = ", "))),
       div(class = "small",
           tags$strong("Saved locally to:"), " ", tags$code(pdir), tags$br(),
-          "Combined: ", tags$code("shell2tlf_all.docx"),
+          "Folders: ", tags$code("ars/"), " ", tags$code("ard/"), " ",
+          tags$code("code/"), " ", tags$code("output/"), tags$br(),
+          "Combined Word: ", tags$code("output/_all.docx"),
           "; per-output ARD: ", tags$code("ard/<id>.csv"),
+          "; {cards} code: ", tags$code("code/<id>.R"),
           if (length(rv$indiv))
             tagList(tags$br(), sprintf("Individual outputs (%d): ", length(rv$indiv)),
-                    tags$code(file.path("outputs", basename(rv$indiv)) |>
+                    tags$code(file.path("output", basename(rv$indiv)) |>
                               paste(collapse = ", "))))
     )
   })

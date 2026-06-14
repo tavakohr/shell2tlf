@@ -47,6 +47,24 @@ local_output_dir <- function(study_id = NULL, root = getwd()) {
   d
 }
 
+## Per-artifact subfolders for a study: ars/ (spec), ard/ (datasets), code/
+## (pure-{cards} deliverables), output/ (Word). Created under the study's
+## persistent output dir. Returns the four paths plus `root`.
+study_dirs <- function(study_id = NULL, root = getwd()) {
+  base <- local_output_dir(study_id, root)
+  d <- list(
+    root   = base,
+    ars    = file.path(base, "ars"),
+    ard    = file.path(base, "ard"),
+    code   = file.path(base, "code"),
+    output = file.path(base, "output")
+  )
+  for (p in c(d$ars, d$ard, d$code, d$output)) {
+    dir.create(p, showWarnings = FALSE, recursive = TRUE)
+  }
+  d
+}
+
 ## Pretty-print the generated ARS JSON for the in-app spec inspector. This is
 ## the teaching surface: it shows exactly what arsbridge built from the shell,
 ## so a wrong table (e.g. a flag used as a grouping instead of a where-filter)
@@ -149,9 +167,14 @@ prepare_adam_dir <- function(zip_path, dir) {
 ## ---- Stage 2: Generate ARS JSON + validate --------------------------------
 run_generate_ars <- function(shell_path, adam_spec_path, provider, api_key,
                              model = NULL, study_id = "STUDY-001",
-                             study_name = NULL, out_dir = tempdir(), log = NULL) {
+                             study_name = NULL, out_dir = tempdir(),
+                             sap_path = NULL, code_dir = NULL, log = NULL) {
   ars_path    <- file.path(out_dir, "reporting_event.json")
   report_path <- file.path(out_dir, "spec_validation_report.xlsx")
+  ## Only a .docx SAP is parseable; ignore other formats gracefully.
+  if (!is.null(sap_path) && !grepl("\\.docx$", sap_path, ignore.case = TRUE)) {
+    sap_path <- NULL
+  }
   if (!is.null(log)) {
     log(sprintf("Generating ARS with %s (model %s)...",
                 provider, model %||% "default"))
@@ -169,8 +192,10 @@ run_generate_ars <- function(shell_path, adam_spec_path, provider, api_key,
     arsbridge::spec_to_ars(
       shell_path     = shell_path,
       adam_spec_path = adam_spec_path,
+      sap_path       = sap_path,
       output_path    = ars_path,
       report_path    = report_path,
+      code_dir       = code_dir,
       study_id       = study_id,
       study_name     = study_name %||% study_id,
       provider       = provider,
@@ -180,6 +205,8 @@ run_generate_ars <- function(shell_path, adam_spec_path, provider, api_key,
   list(
     ars_path    = ars_path,
     report_path = report_path,
+    code_dir    = res$code_dir,
+    code_paths  = res$code_paths,
     validation  = res$validation,
     n_tlfs      = res$n_tlfs %||% NA_integer_,
     n_analyses  = res$n_analyses %||% NA_integer_,

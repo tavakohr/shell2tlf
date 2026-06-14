@@ -24,11 +24,35 @@ for (f in list.files("R", pattern = "\\.R$", full.names = TRUE)) source(f)
 STEPS <- c("1. Upload", "2. LLM Key", "3. Generate ARS",
            "4. Execute ARD", "5. Render TLFs")
 
+## Reusable teaching "code lab": an editable box pre-filled with the exact
+## arsbridge call for the current selections, a Run button, and a result area.
+## `prefix` keys the input ids (<prefix>_code, run_<prefix>, reset_<prefix>,
+## <prefix>_out).
+code_lab_ui <- function(prefix, heading, desc) {
+  tagList(
+    hr(),
+    h6(heading),
+    div(class = "small text-muted mb-1", desc),
+    div(class = "s2t-code",
+        textAreaInput(paste0(prefix, "_code"), NULL, rows = 10, width = "100%")),
+    div(class = "mt-1 mb-2",
+        actionButton(paste0("run_", prefix), "Run this code",
+                     icon = icon("play"), class = "btn-outline-primary btn-sm"),
+        actionButton(paste0("reset_", prefix), "Reset to generated",
+                     icon = icon("rotate-left"), class = "btn-link btn-sm")),
+    tags$pre(class = "small", style = "max-height:280px; overflow:auto;",
+             verbatimTextOutput(paste0(prefix, "_out")))
+  )
+}
+
 ui <- page_sidebar(
   title = tagList(strong("shell2tlf"),
                   span(class = "text-muted",
                        " — annotated shell → ARS → ARD → Word TLF")),
   theme = bs_theme(version = 5, primary = "#2C6E9B"),
+  tags$head(tags$style(HTML(
+    ".s2t-code textarea { font-family: ui-monospace, Consolas, monospace;",
+    " font-size: 12px; white-space: pre; }"))),
   sidebar = sidebar(
     width = 290,
     h6("Pipeline progress"),
@@ -148,7 +172,11 @@ ui <- page_sidebar(
           navset_tab(
             nav_panel("ARD preview", DT::DTOutput("ard_tbl")),
             nav_panel("Execution diagnostics", DT::DTOutput("diag_tbl"))
-          )
+          ),
+          code_lab_ui("lab4", "Code lab — ars_to_ard()",
+            tagList("Exact arsbridge call behind this step. Edit any argument ",
+              "(e.g. set ", tags$code("output_ids"), " to a subset) and Run — ",
+              "the result replaces the ARD used in Step 5."))
         )
       ),
       div(actionButton("back_s3", "← Back"),
@@ -172,7 +200,11 @@ ui <- page_sidebar(
           navset_tab(
             nav_panel("Coverage manifest", DT::DTOutput("manifest_tbl")),
             nav_panel("Preview (first table)", uiOutput("tlf_preview"))
-          )
+          ),
+          code_lab_ui("lab5", "Code lab — ars_render_tlf() / ars_render_all()",
+            tagList("Updates as you tick/untick outputs above. Edit and Run — ",
+              tags$code("ars_render_tlf()"), " previews one table; ",
+              tags$code("ars_render_all()"), " writes the selected outputs to Word."))
         )
       ),
       actionButton("back_s4", "← Back")
@@ -489,6 +521,78 @@ server <- function(input, output, session) {
   output$dl_docx <- downloadHandler(
     filename = function() "shell2tlf_all_tlfs.docx",
     content = function(file) { req(rv$docx); file.copy(rv$docx, file) })
+
+  ## ---- Code labs: live, editable, runnable arsbridge snippets --------------
+  ## Step 4 — ars_to_ard(). Static template (Step 4 has no selections); the
+  ## result of running it replaces rv$ard for downstream steps.
+  gen_lab4 <- reactive({
+    paste0(
+      "# Execute the ARS spec into one tidy ARD ({cards} format).\n",
+      "# `ars_path` and `adam_dir` are already defined for you.\n",
+      "# Set output_ids to a subset to run fewer outputs; NULL = all.\n",
+      "ard <- arsbridge::ars_to_ard(\n",
+      "  ars_path   = ars_path,\n",
+      "  adam_dir   = adam_dir,\n",
+      "  output_ids = NULL\n",
+      ")\n",
+      "ard"
+    )
+  })
+
+  ## Step 5 — render. Regenerates whenever the output picker changes.
+  gen_lab5 <- reactive({
+    ids   <- c(input$pick_table, input$pick_listing, input$pick_figure)
+    first <- (input$pick_table %||% "T-14-1-1")[1]
+    paste0(
+      "# `ars_path`, `ard`, `adam_dir`, `out_dir` are already defined.\n",
+      "# 1) Preview ONE table as a gt object:\n",
+      "arsbridge::ars_render_tlf(ars_path, ard, output_id = \"", first, "\")\n\n",
+      "# 2) Render the selected outputs to one Word file (this is what runs):\n",
+      "arsbridge::ars_render_all(\n",
+      "  ars_path   = ars_path,\n",
+      "  ard        = ard,\n",
+      "  adam_dir   = adam_dir,\n",
+      "  file       = file.path(out_dir, \"codelab_tlfs.docx\"),\n",
+      "  output_ids = ", r_char_vec(ids), "\n",
+      ")"
+    )
+  })
+
+  ## Keep each box in sync with the generators (and the Reset buttons). Editing
+  ## the box is fine; changing a selection or hitting Reset regenerates it.
+  observe(updateTextAreaInput(session, "lab4_code", value = gen_lab4()))
+  observe(updateTextAreaInput(session, "lab5_code", value = gen_lab5()))
+  observeEvent(input$reset_lab4,
+    updateTextAreaInput(session, "lab4_code", value = gen_lab4()))
+  observeEvent(input$reset_lab5,
+    updateTextAreaInput(session, "lab5_code", value = gen_lab5()))
+
+  observeEvent(input$run_lab4, {
+    req(rv$ars_path, rv$adam_dir)
+    res <- run_code_console(input$lab4_code,
+             vars = list(ars_path = rv$ars_path, adam_dir = rv$adam_dir,
+                         ard = rv$ard))
+    output$lab4_out <- renderText(summarise_run(res))
+    if (is.null(res$error) && !is.null(res$value)) {
+      rv$ard <- res$value                       # feed downstream
+      rv$output_ids <- run_execute_ard_ids(res$value)
+      addlog("Code lab: ars_to_ard() run; ARD updated from your edited code.")
+    }
+  })
+
+  observeEvent(input$run_lab5, {
+    req(rv$ars_path, rv$ard, rv$adam_dir)
+    res <- run_code_console(input$lab5_code,
+             vars = list(ars_path = rv$ars_path, ard = rv$ard,
+                         adam_dir = rv$adam_dir, out_dir = out_dir))
+    output$lab5_out <- renderText(summarise_run(res))
+    f <- file.path(out_dir, "codelab_tlfs.docx")
+    if (is.null(res$error) && file.exists(f)) {
+      rv$docx <- f
+      if (is.data.frame(res$value)) rv$manifest <- res$value
+      addlog("Code lab: render run; download via the Word button uses this file.")
+    }
+  })
 }
 
 shinyApp(ui, server)

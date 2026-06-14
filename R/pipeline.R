@@ -61,6 +61,53 @@ read_ars_pretty <- function(ars_path) {
   as.character(txt)
 }
 
+## --- teaching "code lab" -----------------------------------------------------
+## Run a user-edited arsbridge snippet in a sandbox env where the pipeline
+## objects (ars_path, adam_dir, ard, ...) are predefined, capturing console
+## output, the returned value, and any error. Local tutorial use only -- this
+## evaluates arbitrary R the user typed, by design, so they can learn the API.
+run_code_console <- function(code, vars = list()) {
+  env <- new.env(parent = globalenv())
+  for (nm in names(vars)) assign(nm, vars[[nm]], envir = env)
+  out <- list(value = NULL, console = character(0), error = NULL)
+  tryCatch(
+    out$console <- utils::capture.output(
+      out$value <- withVisible(eval(parse(text = code), envir = env))$value),
+    error = function(e) out$error <<- conditionMessage(e))
+  out
+}
+
+## Output ids present in an ARD's output_id column.
+run_execute_ard_ids <- function(ard) {
+  if (is.null(ard)) return(NULL)
+  unique(stats::na.omit(vapply(ard[["output_id"]],
+    function(x) if (length(x)) as.character(x[[1]]) else NA_character_,
+    character(1))))
+}
+
+## Format a run_code_console() result for display in a verbatim box.
+summarise_run <- function(res) {
+  if (!is.null(res$error)) return(paste0("ERROR: ", res$error))
+  v <- res$value
+  vsum <-
+    if (is.data.frame(v)) sprintf("<data.frame: %d rows x %d cols>",
+                                  nrow(v), ncol(v))
+    else if (inherits(v, c("gt_tbl", "gtable"))) "<gt table object>"
+    else if (is.character(v) && length(v) == 1) v
+    else if (is.null(v)) "(NULL / invisible)"
+    else paste(utils::capture.output(utils::str(v, max.level = 1)),
+               collapse = "\n")
+  out <- res$console
+  paste(c(if (length(out)) out, "", paste0("=> returned: ", vsum)),
+        collapse = "\n")
+}
+
+## Pretty one-line R vector literal, e.g. c("T-14-1-1", "T-14-2-1") or NULL.
+r_char_vec <- function(x) {
+  if (is.null(x) || !length(x)) return("NULL")
+  sprintf("c(%s)", paste0("\"", x, "\"", collapse = ", "))
+}
+
 ## Flatten an ARS ARD (list-columns) to a plain data.frame for CSV export.
 flatten_ard <- function(ard) {
   df <- as.data.frame(ard, stringsAsFactors = FALSE)

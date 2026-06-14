@@ -22,7 +22,7 @@ for (f in list.files("R", pattern = "\\.R$", full.names = TRUE)) source(f)
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
 
 STEPS <- c("1. Upload", "2. LLM Key", "3. Generate ARS",
-           "4. Execute ARD", "5. Render TLFs")
+           "4. Execute ARD", "5. Render TLFs", "6. Combine")
 
 ## Reusable teaching "code lab": an editable box pre-filled with the exact
 ## arsbridge call for the current selections, a Run button, and a result area.
@@ -209,7 +209,28 @@ ui <- page_sidebar(
               tags$code("ars_render_all()"), " writes the selected outputs to Word."))
         )
       ),
-      actionButton("back_s4", "← Back")
+      div(actionButton("back_s4", "← Back"),
+          actionButton("to_s6", "Next: Combine →", class = "btn-primary"))
+    ),
+
+    ## ---- Step 6: Combine selected TLFs -----------------------------------
+    nav_panel("s6", value = "s6",
+      card(card_header("Step 6 — Combine selected TLFs into one bundle"),
+        card_body(
+          p("Pick the outputs to bundle together. This writes a timestamped ",
+            tags$code("combined_<stamp>/"), " folder with one combined ",
+            tags$code("{cards}"), " script, a combined ARD CSV, and a combined ",
+            "Word document."),
+          uiOutput("combine_picker"),
+          div(class = "mt-2",
+            actionButton("run_combine", "Combine selected",
+                         icon = icon("layer-group"), class = "btn-primary"),
+            downloadButton("dl_combine", "Download bundle (.zip)",
+                           class = "btn-success")),
+          uiOutput("combine_summary")
+        )
+      ),
+      actionButton("back_s5", "← Back")
     )
   ),
   ## Shared activity log.
@@ -270,6 +291,7 @@ server <- function(input, output, session) {
   observeEvent(input$to_s3, go(3));  observeEvent(input$back_s2, go(2))
   observeEvent(input$to_s4, go(4));  observeEvent(input$back_s3, go(3))
   observeEvent(input$to_s5, go(5));  observeEvent(input$back_s4, go(4))
+  observeEvent(input$to_s6, go(6));  observeEvent(input$back_s5, go(5))
 
   ## ---- uploads ----
   observeEvent(input$up_shell, rv$shell <- stash_upload(input$up_shell, in_dir))
@@ -542,6 +564,56 @@ server <- function(input, output, session) {
   output$dl_docx <- downloadHandler(
     filename = function() "shell2tlf_all_tlfs.docx",
     content = function(file) { req(rv$docx); file.copy(rv$docx, file) })
+
+  ## ---- Stage 6: combine selected TLFs into a timestamped bundle ----
+  output$combine_picker <- renderUI({
+    req(rv$ars_path)
+    outs <- tryCatch(list_spec_outputs(rv$ars_path), error = function(e) NULL)
+    if (is.null(outs))
+      return(div(class = "text-muted small", "Generate an ARS first (Step 3)."))
+    ch <- stats::setNames(outs$id, paste0(outs$id, " — ", outs$label))
+    div(class = "small",
+        div(class = "text-muted mb-1", "Tick the outputs to bundle together."),
+        checkboxGroupInput("pick_combine", NULL, choices = ch, selected = ch))
+  })
+
+  observeEvent(input$run_combine, {
+    req(rv$ars_path, rv$ard, rv$adam_dir)
+    picks <- input$pick_combine
+    if (!length(picks)) {
+      showNotification("Select at least one output.", type = "error"); return()
+    }
+    withProgress(message = "Combining selected TLFs...", value = 0.3, {
+      tryCatch({
+        res <- combine_selected_tlfs(input$study_id, rv$ars_path, rv$ard,
+                 rv$adam_dir, output_ids = picks, log = addlog)
+        rv$combine_dir <- res$dir
+        addlog(sprintf("Combined bundle written to %s",
+                       normalizePath(res$dir, mustWork = FALSE)))
+        showNotification(sprintf("Combined %d output(s).", length(picks)),
+                         type = "message")
+      }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
+        showNotification(paste("Combine failed:", conditionMessage(e)),
+                         type = "error") })
+    })
+  })
+
+  output$combine_summary <- renderUI({
+    req(rv$combine_dir)
+    fs <- list.files(rv$combine_dir)
+    div(class = "alert alert-info small mt-2",
+        tags$strong("Bundle:"), " ", tags$code(basename(rv$combine_dir)),
+        tags$br(), "Files: ", tags$code(paste(fs, collapse = ", ")))
+  })
+
+  output$dl_combine <- downloadHandler(
+    filename = function() paste0(basename(rv$combine_dir %||% "combined"), ".zip"),
+    content = function(file) {
+      req(rv$combine_dir)
+      fs <- list.files(rv$combine_dir, full.names = TRUE)
+      validate(need(length(fs) > 0, "Nothing to download yet."))
+      utils::zip(file, fs, flags = "-j9X")
+    })
 
   ## ---- Code labs: live, editable, runnable arsbridge snippets --------------
   ## Step 4 — ars_to_ard(). Static template (Step 4 has no selections); the

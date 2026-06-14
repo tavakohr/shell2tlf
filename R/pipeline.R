@@ -146,11 +146,17 @@ save_ard_per_output <- function(ard, dir, log = NULL) {
 }
 
 ## Flatten an ARS ARD (list-columns) to a plain data.frame for CSV export.
+## cards ARDs carry function-valued list-columns (e.g. fmt_fn) and nested
+## warning/error cells, so each value is rendered defensively to a string.
 flatten_ard <- function(ard) {
   df <- as.data.frame(ard, stringsAsFactors = FALSE)
-  df[] <- lapply(df, function(col) vapply(col, function(x)
-    if (length(x)) paste(unlist(x), collapse = "; ") else NA_character_,
-    character(1)))
+  cell <- function(x) {
+    if (is.null(x) || !length(x)) return(NA_character_)
+    if (is.function(x)) return("<fn>")
+    tryCatch(paste(unlist(x, use.names = FALSE), collapse = "; "),
+             error = function(e) "<unprintable>")
+  }
+  df[] <- lapply(df, function(col) vapply(col, cell, character(1)))
   df
 }
 
@@ -245,6 +251,61 @@ run_render_tlfs <- function(ars_path, ard, file, output_ids = NULL, log = NULL,
   if (!is.null(log)) log(sprintf("Rendered %d table(s) into %s",
                                  length(rendered), basename(file)))
   list(file = file, rendered = rendered)
+}
+
+## ---- Step 6: combine selected TLFs into a timestamped bundle ---------------
+## Writes a combined {cards} script, a combined ARD CSV, and a combined Word doc
+## for the chosen outputs into outputs/<study>/combined_<stamp>/. Reuses the
+## per-TLF code/ deliverables emitted at Step 3.
+combine_selected_tlfs <- function(study_id, ars_path, ard, adam_dir, output_ids,
+                                  root = getwd(), log = NULL) {
+  if (!length(output_ids)) stop("Select at least one output to combine.")
+  dirs  <- study_dirs(study_id, root)
+  stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  cdir  <- file.path(dirs$root, paste0("combined_", stamp))
+  dir.create(cdir, showWarnings = FALSE, recursive = TRUE)
+  files <- character(0)
+
+  ## 1. Combined {cards} script: concatenate the per-TLF deliverables.
+  combo_R <- file.path(cdir, "combined_cards.R")
+  banner <- c(
+    sprintf("## Combined {cards} analysis -- %d TLF(s), generated %s",
+            length(output_ids), stamp),
+    sprintf("## Outputs: %s", paste(output_ids, collapse = ", ")), "")
+  body <- unlist(lapply(output_ids, function(oid) {
+    f <- file.path(dirs$code, paste0(make.names(oid), ".R"))
+    if (file.exists(f)) {
+      c(sprintf("\n## ---- %s ----", oid), readLines(f, warn = FALSE))
+    } else {
+      sprintf("\n## ---- %s (no emitted script found) ----", oid)
+    }
+  }))
+  writeLines(c(banner, body), combo_R)
+  files <- c(files, combo_R)
+  if (!is.null(log)) log(sprintf("Wrote %s", basename(combo_R)))
+
+  ## 2. Combined ARD: subset to the selected outputs, flattened to CSV.
+  combo_ard <- file.path(cdir, "combined_ard.csv")
+  oid_col <- vapply(ard[["output_id"]], function(x)
+    if (length(x)) as.character(x[[1]]) else NA_character_, character(1))
+  sub <- ard[which(oid_col %in% output_ids), , drop = FALSE]
+  utils::write.csv(flatten_ard(sub), combo_ard, row.names = FALSE)
+  files <- c(files, combo_ard)
+  if (!is.null(log)) {
+    log(sprintf("Wrote %s (%d rows)", basename(combo_ard), nrow(sub)))
+  }
+
+  ## 3. Combined Word document for the selection.
+  combo_docx <- file.path(cdir, "combined.docx")
+  tryCatch({
+    run_render_all(ars_path, ard, adam_dir, combo_docx,
+                   output_ids = output_ids, log = log)
+    files <- c(files, combo_docx)
+  }, error = function(e) {
+    if (!is.null(log)) log(paste("Combined docx failed:", conditionMessage(e)))
+  })
+
+  list(dir = cdir, files = files)
 }
 
 ## List every output in the ARS spec with its kind + label, for the picker.

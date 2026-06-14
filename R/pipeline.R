@@ -38,6 +38,24 @@ stash_upload <- function(upload, dir, as_name = NULL) {
   copy_in(upload$datapath, dir, as_name %||% upload$name, what = upload$name)
 }
 
+## Persistent local output folder for a study (survives restarts, unlike
+## tempdir()). Returns <root>/outputs/<sanitised study id>/, created.
+local_output_dir <- function(study_id = NULL, root = getwd()) {
+  sub <- gsub("[^A-Za-z0-9._-]+", "_", study_id %||% "study")
+  d <- file.path(root, "outputs", sub)
+  dir.create(d, showWarnings = FALSE, recursive = TRUE)
+  d
+}
+
+## Flatten an ARS ARD (list-columns) to a plain data.frame for CSV export.
+flatten_ard <- function(ard) {
+  df <- as.data.frame(ard, stringsAsFactors = FALSE)
+  df[] <- lapply(df, function(col) vapply(col, function(x)
+    if (length(x)) paste(unlist(x), collapse = "; ") else NA_character_,
+    character(1)))
+  df
+}
+
 ## Unzip an ADaM data archive and return the directory that holds the datasets.
 prepare_adam_dir <- function(zip_path, dir) {
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
@@ -54,8 +72,19 @@ run_generate_ars <- function(shell_path, adam_spec_path, provider, api_key,
                              study_name = NULL, out_dir = tempdir(), log = NULL) {
   ars_path    <- file.path(out_dir, "reporting_event.json")
   report_path <- file.path(out_dir, "spec_validation_report.xlsx")
-  if (!is.null(log)) log(sprintf("Generating ARS with %s (model %s)...",
-                                 provider, model %||% "default"))
+  if (!is.null(log)) {
+    log(sprintf("Generating ARS with %s (model %s)...",
+                provider, model %||% "default"))
+    log(sprintf(paste0("# R code running now:\n",
+                       "arsbridge::spec_to_ars(\n",
+                       "  shell_path     = \"%s\",\n",
+                       "  adam_spec_path = \"%s\",\n",
+                       "  provider       = \"%s\", model = %s,\n",
+                       "  study_id       = \"%s\")"),
+                basename(shell_path), basename(adam_spec_path), provider,
+                if (is.null(model)) "NULL" else paste0("\"", model, "\""),
+                study_id))
+  }
   res <- with_log(
     arsbridge::spec_to_ars(
       shell_path     = shell_path,
@@ -81,7 +110,14 @@ run_generate_ars <- function(shell_path, adam_spec_path, provider, api_key,
 
 ## ---- Stage 3: Execute ARS -> tidy ARD -------------------------------------
 run_execute_ard <- function(ars_path, adam_dir, log = NULL) {
-  if (!is.null(log)) log("Executing ARS analyses against ADaM data...")
+  if (!is.null(log)) {
+    log("Executing ARS analyses against ADaM data...")
+    log(sprintf(paste0("# R code running now:\n",
+                       "arsbridge::ars_to_ard(\n",
+                       "  ars_path = \"%s\",\n",
+                       "  adam_dir = \"%s\")"),
+                basename(ars_path), adam_dir))
+  }
   ard <- with_log(arsbridge::ars_to_ard(ars_path, adam_dir), log = log)
   diagnostics <- tryCatch(arsbridge::ars_diagnostics(), error = function(e) NULL)
   flat <- function(col) vapply(col, function(x)
@@ -126,7 +162,17 @@ list_spec_outputs <- function(ars_path) {
 ## manifest. Requires adam_dir (for listings/figures).
 run_render_all <- function(ars_path, ard, adam_dir, file, output_ids = NULL,
                            log = NULL, progress = NULL) {
-  if (!is.null(log)) log("Rendering selected outputs (tables + listings + figures) to Word...")
+  if (!is.null(log)) {
+    log("Rendering selected outputs (tables + listings + figures) to Word...")
+    log(sprintf(paste0("# R code running now:\n",
+                       "arsbridge::ars_render_all(\n",
+                       "  ars_path = \"%s\", ard = <ARD>,\n",
+                       "  adam_dir = \"%s\",\n",
+                       "  file = \"%s\",\n",
+                       "  output_ids = c(%s))"),
+                basename(ars_path), adam_dir, basename(file),
+                paste0("\"", output_ids %||% "all", "\"", collapse = ", ")))
+  }
   manifest <- arsbridge::ars_render_all(ars_path, ard, adam_dir = adam_dir,
                                         file = file, output_ids = output_ids,
                                         progress = progress)

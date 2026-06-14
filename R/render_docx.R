@@ -148,3 +148,31 @@ render_tlfs_docx <- function(ars_path, ard, file, output_ids = NULL,
   attr(file, "rendered") <- rendered
   invisible(file)
 }
+
+## --- one .docx per table output (for a local archive) -----------------------
+
+#' Write each table output to its own `<output_id>.docx` in `dir`.
+#' Tables only — listings/figures stay in the combined arsbridge document.
+#' @return character vector of the per-table files written.
+render_each_table_docx <- function(ars_path, ard, dir, output_ids = NULL,
+                                   log = NULL) {
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  spec    <- jsonlite::fromJSON(ars_path, simplifyVector = FALSE)
+  ard_ids <- unique(stats::na.omit(vapply(ard[["output_id"]],
+              function(x) if (length(x)) as.character(x[[1]]) else NA_character_,
+              character(1))))
+  ids <- if (is.null(output_ids)) ard_ids else intersect(output_ids, ard_ids)
+  ids <- ids[grepl("^t", ids, ignore.case = TRUE)]   # tables only
+
+  written <- character(0)
+  for (oid in ids) {
+    f <- file.path(dir, paste0(gsub("[^A-Za-z0-9._-]+", "_", oid), ".docx"))
+    one <- tryCatch(render_tlfs_docx(ars_path, ard, f, output_ids = oid),
+                    error = function(e) NULL)
+    if (!is.null(one) && length(attr(one, "rendered"))) {
+      written <- c(written, f)
+      if (!is.null(log)) log(sprintf("Saved individual table: %s", basename(f)))
+    }
+  }
+  written
+}

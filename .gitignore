@@ -19,6 +19,9 @@ tmp_*.R
 *.docx
 !www/*.docx
 
+# generated per-study TLF outputs (json, ard.csv, docx)
+outputs/
+
 # secrets — never commit a key
 .Renviron
 .env

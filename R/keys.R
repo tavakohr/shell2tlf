@@ -9,7 +9,8 @@ PROVIDERS <- list(
   anthropic = list(
     label   = "Anthropic (Claude)",
     env     = "ANTHROPIC_API_KEY",
-    default = "claude-sonnet-4-5",
+    default = "claude-sonnet-4-6",
+    models  = c("claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"),
     chat    = function(model, key) ellmer::chat_anthropic(model = model, api_key = key),
     hint    = "Key starts with 'sk-ant-'. Get one at console.anthropic.com."
   ),
@@ -17,6 +18,7 @@ PROVIDERS <- list(
     label   = "OpenAI (GPT)",
     env     = "OPENAI_API_KEY",
     default = "gpt-4o",
+    models  = c("gpt-4o-mini", "gpt-4o", "gpt-4.1"),
     chat    = function(model, key) ellmer::chat_openai(model = model, api_key = key),
     hint    = "Key starts with 'sk-'. Get one at platform.openai.com."
   ),
@@ -24,6 +26,7 @@ PROVIDERS <- list(
     label   = "Google (Gemini)",
     env     = "GEMINI_API_KEY",
     default = "gemini-1.5-pro",
+    models  = c("gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"),
     chat    = function(model, key) ellmer::chat_google_gemini(model = model, api_key = key),
     hint    = "Get one at aistudio.google.com/apikey."
   )

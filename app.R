@@ -88,6 +88,7 @@ ui <- page_sidebar(
             selectInput("provider", "Provider", choices = provider_choices()),
             textInput("model", "Model (optional)", placeholder = "provider default")
           ),
+          uiOutput("model_hint"),
           passwordInput("api_key", "API key", width = "100%"),
           uiOutput("key_hint"),
           div(class = "mt-2",
@@ -183,7 +184,7 @@ server <- function(input, output, session) {
     shell = NULL, spec = NULL, data_zip = NULL, sap = NULL, empty = NULL,
     adam_dir = NULL, key_ok = FALSE, ars_path = NULL, validation = NULL,
     ard = NULL, exec = NULL, output_ids = NULL, docx = NULL, manifest = NULL,
-    log = character(0), step = 1L
+    indiv = NULL, log = character(0), step = 1L
   )
   addlog <- function(...) {
     rv$log <- c(rv$log, unlist(list(...)))
@@ -269,6 +270,25 @@ server <- function(input, output, session) {
   ## ---- LLM key ----
   output$key_hint <- renderUI(div(class = "form-text", PROVIDERS[[input$provider]]$hint))
 
+  ## Show example model IDs for the chosen provider; mark the session default.
+  output$model_hint <- renderUI({
+    p  <- PROVIDERS[[input$provider]]
+    ex <- p$models %||% p$default
+    tagList(
+      div(class = "form-text",
+          "Leave blank to use the provider default (",
+          tags$code(p$default), "). Examples: ",
+          do.call(tagList, lapply(seq_along(ex), function(i)
+            tagList(if (i > 1) ", ", tags$code(ex[i])))), ".")
+    )
+  })
+
+  ## Keep the Model placeholder showing the current provider's default.
+  observeEvent(input$provider, {
+    updateTextInput(session, "model",
+                    placeholder = PROVIDERS[[input$provider]]$default)
+  })
+
   observeEvent(input$test_key, {
     res <- NULL
     withProgress(message = "Testing key...", {
@@ -310,6 +330,14 @@ server <- function(input, output, session) {
         rv$validation <- gen$validation
         addlog(sprintf("ARS ready: %s TLFs, %s analyses, %s warnings.",
                        gen$n_tlfs, gen$n_analyses, gen$n_warnings))
+        ## Persist the ARS spec + validation report to a local study folder.
+        pdir <- local_output_dir(input$study_id)
+        file.copy(gen$ars_path, file.path(pdir, "reporting_event.json"),
+                  overwrite = TRUE)
+        if (file.exists(gen$report_path))
+          file.copy(gen$report_path, file.path(pdir, "spec_validation_report.xlsx"),
+                    overwrite = TRUE)
+        addlog(sprintf("Saved ARS spec to %s", normalizePath(pdir, mustWork = FALSE)))
         showNotification("ARS JSON generated.", type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("ARS generation failed:", conditionMessage(e)), type = "error") })
@@ -333,6 +361,11 @@ server <- function(input, output, session) {
         rv$ard <- exec$ard; rv$exec <- exec; rv$output_ids <- exec$output_ids
         addlog(sprintf("ARD built: %s rows across %s outputs.",
                        exec$n_rows, length(exec$output_ids)))
+        ## Persist the flattened ARD as CSV for inspection.
+        pdir <- local_output_dir(input$study_id)
+        utils::write.csv(flatten_ard(exec$ard),
+                         file.path(pdir, "ard.csv"), row.names = FALSE)
+        addlog(sprintf("Saved ARD to %s", file.path(pdir, "ard.csv")))
         showNotification("ARD generated.", type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("ARD execution failed:", conditionMessage(e)), type = "error") })
@@ -392,6 +425,14 @@ server <- function(input, output, session) {
             setProgress(i / total, detail = sprintf("%s (%d/%d)", oid, i, total)))
         rv$docx <- res$file; rv$manifest <- res$manifest
         n_ok <- sum(res$manifest$status == "rendered")
+        ## Persist combined + per-table .docx to the local study folder.
+        pdir <- local_output_dir(input$study_id)
+        file.copy(res$file, file.path(pdir, "shell2tlf_all.docx"), overwrite = TRUE)
+        indiv <- render_each_table_docx(rv$ars_path, rv$ard,
+                   file.path(pdir, "tables"), output_ids = picks, log = addlog)
+        rv$indiv <- indiv
+        addlog(sprintf("Saved combined + %d individual table(s) to %s",
+                       length(indiv), normalizePath(pdir, mustWork = FALSE)))
         showNotification(sprintf("Rendered %d of %d outputs to Word.",
                                  n_ok, nrow(res$manifest)), type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
@@ -402,11 +443,21 @@ server <- function(input, output, session) {
   output$render_summary <- renderUI({
     req(rv$manifest)
     n_ok <- sum(rv$manifest$status == "rendered")
-    div(class = "alert alert-info small mt-2",
-        sprintf("Rendered %d of %d outputs (%s).", n_ok, nrow(rv$manifest),
-                paste(names(table(rv$manifest$type[rv$manifest$status=="rendered"])),
-                      table(rv$manifest$type[rv$manifest$status=="rendered"]),
-                      collapse = ", ")))
+    pdir <- normalizePath(local_output_dir(input$study_id), mustWork = FALSE)
+    tagList(
+      div(class = "alert alert-info small mt-2",
+          sprintf("Rendered %d of %d outputs (%s).", n_ok, nrow(rv$manifest),
+                  paste(names(table(rv$manifest$type[rv$manifest$status=="rendered"])),
+                        table(rv$manifest$type[rv$manifest$status=="rendered"]),
+                        collapse = ", "))),
+      div(class = "small",
+          tags$strong("Saved locally to:"), " ", tags$code(pdir), tags$br(),
+          "Combined: ", tags$code("shell2tlf_all.docx"),
+          if (length(rv$indiv))
+            tagList(tags$br(), sprintf("Individual tables (%d): ", length(rv$indiv)),
+                    tags$code(file.path("tables", basename(rv$indiv)) |>
+                              paste(collapse = ", "))))
+    )
   })
 
   output$manifest_tbl <- DT::renderDT({

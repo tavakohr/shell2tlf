@@ -662,29 +662,48 @@ server <- function(input, output, session) {
     updateTextAreaInput(session, "lab5_code", value = gen_lab5()))
 
   observeEvent(input$run_lab4, {
-    req(rv$ars_path, rv$adam_dir)
-    res <- run_code_console(input$lab4_code,
-             vars = list(ars_path = rv$ars_path, adam_dir = rv$adam_dir,
-                         ard = rv$ard))
+    addlog("Code lab: running ars_to_ard()...")
+    res <- withProgress(message = "Running your code (ars_to_ard)...",
+                        value = 0.5,
+      run_code_console(input$lab4_code,
+        vars = list(ars_path = rv$ars_path, adam_dir = rv$adam_dir,
+                    ard = rv$ard)))
     output$lab4_out <- renderText(summarise_run(res))
     if (is.null(res$error) && !is.null(res$value)) {
       rv$ard <- res$value                       # feed downstream
       rv$output_ids <- run_execute_ard_ids(res$value)
-      addlog("Code lab: ars_to_ard() run; ARD updated from your edited code.")
+      addlog("Code lab: ars_to_ard() done; ARD updated from your edited code.")
+      showNotification("Output ready — see the result box below.",
+                       type = "message")
+    } else if (!is.null(res$error)) {
+      addlog(paste("Code lab error:", res$error))
+      showNotification(paste("Code error:", res$error), type = "error",
+                       duration = 10)
+    } else {
+      showNotification("Code ran but returned no value.", type = "warning")
     }
   })
 
   observeEvent(input$run_lab5, {
-    req(rv$ars_path, rv$ard, rv$adam_dir)
-    res <- run_code_console(input$lab5_code,
-             vars = list(ars_path = rv$ars_path, ard = rv$ard,
-                         adam_dir = rv$adam_dir, out_dir = out_dir))
+    addlog("Code lab: running render...")
+    res <- withProgress(message = "Running your code (render)...", value = 0.5,
+      run_code_console(input$lab5_code,
+        vars = list(ars_path = rv$ars_path, ard = rv$ard,
+                    adam_dir = rv$adam_dir, out_dir = out_dir)))
     output$lab5_out <- renderText(summarise_run(res))
     f <- file.path(out_dir, "codelab_tlfs.docx")
-    if (is.null(res$error) && file.exists(f)) {
-      rv$docx <- f
-      if (is.data.frame(res$value)) rv$manifest <- res$value
-      addlog("Code lab: render run; download via the Word button uses this file.")
+    if (is.null(res$error)) {
+      if (file.exists(f)) {
+        rv$docx <- f
+        if (is.data.frame(res$value)) rv$manifest <- res$value
+        addlog("Code lab: render done; the Word button uses this file.")
+      }
+      showNotification("Output ready — see the result box below.",
+                       type = "message")
+    } else {
+      addlog(paste("Code lab error:", res$error))
+      showNotification(paste("Code error:", res$error), type = "error",
+                       duration = 10)
     }
   })
 }

@@ -151,6 +151,31 @@ render_tlfs_docx <- function(ars_path, ard, file, output_ids = NULL,
 
 ## --- one .docx per table output (for a local archive) -----------------------
 
+#' Write each output (table, listing, OR figure) to its own `<output_id>.docx`
+#' via arsbridge::ars_render_all, so every individual TLF is archived in the
+#' same regulatory format as the combined document. Needs `adam_dir` for
+#' listings/figures.
+#' @return character vector of the per-output files written.
+render_each_output_docx <- function(ars_path, ard, adam_dir, dir,
+                                    output_ids = NULL, log = NULL) {
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  ids <- output_ids %||% run_execute_ard_ids(ard)
+  written <- character(0)
+  for (oid in ids) {
+    f <- file.path(dir, paste0(gsub("[^A-Za-z0-9._-]+", "_", oid), ".docx"))
+    ok <- tryCatch({
+      arsbridge::ars_render_all(ars_path, ard, adam_dir = adam_dir,
+                                file = f, output_ids = oid)
+      file.exists(f)
+    }, error = function(e) FALSE)
+    if (isTRUE(ok)) {
+      written <- c(written, f)
+      if (!is.null(log)) log(sprintf("Saved individual output: %s", basename(f)))
+    }
+  }
+  written
+}
+
 #' Write each table output to its own `<output_id>.docx` in `dir`.
 #' Tables only — listings/figures stay in the combined arsbridge document.
 #' @return character vector of the per-table files written.

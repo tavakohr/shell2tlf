@@ -408,7 +408,9 @@ server <- function(input, output, session) {
         pdir <- local_output_dir(input$study_id)
         utils::write.csv(flatten_ard(exec$ard),
                          file.path(pdir, "ard.csv"), row.names = FALSE)
-        addlog(sprintf("Saved ARD to %s", file.path(pdir, "ard.csv")))
+        per <- save_ard_per_output(exec$ard, file.path(pdir, "ard"), log = addlog)
+        addlog(sprintf("Saved combined ARD + %d per-output ARD(s) under %s",
+                       length(per), file.path(pdir, "ard")))
         showNotification("ARD generated.", type = "message")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("ARD execution failed:", conditionMessage(e)), type = "error") })
@@ -471,10 +473,10 @@ server <- function(input, output, session) {
         ## Persist combined + per-table .docx to the local study folder.
         pdir <- local_output_dir(input$study_id)
         file.copy(res$file, file.path(pdir, "shell2tlf_all.docx"), overwrite = TRUE)
-        indiv <- render_each_table_docx(rv$ars_path, rv$ard,
-                   file.path(pdir, "tables"), output_ids = picks, log = addlog)
+        indiv <- render_each_output_docx(rv$ars_path, rv$ard, rv$adam_dir,
+                   file.path(pdir, "outputs"), output_ids = picks, log = addlog)
         rv$indiv <- indiv
-        addlog(sprintf("Saved combined + %d individual table(s) to %s",
+        addlog(sprintf("Saved combined + %d individual output(s) to %s",
                        length(indiv), normalizePath(pdir, mustWork = FALSE)))
         showNotification(sprintf("Rendered %d of %d outputs to Word.",
                                  n_ok, nrow(res$manifest)), type = "message")
@@ -496,9 +498,10 @@ server <- function(input, output, session) {
       div(class = "small",
           tags$strong("Saved locally to:"), " ", tags$code(pdir), tags$br(),
           "Combined: ", tags$code("shell2tlf_all.docx"),
+          "; per-output ARD: ", tags$code("ard/<id>.csv"),
           if (length(rv$indiv))
-            tagList(tags$br(), sprintf("Individual tables (%d): ", length(rv$indiv)),
-                    tags$code(file.path("tables", basename(rv$indiv)) |>
+            tagList(tags$br(), sprintf("Individual outputs (%d): ", length(rv$indiv)),
+                    tags$code(file.path("outputs", basename(rv$indiv)) |>
                               paste(collapse = ", "))))
     )
   })

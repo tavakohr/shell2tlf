@@ -108,6 +108,25 @@ r_char_vec <- function(x) {
   sprintf("c(%s)", paste0("\"", x, "\"", collapse = ", "))
 }
 
+## Write one CSV per output_id (table/listing/figure) from the combined ARD,
+## into <dir>/ard/<output_id>.csv. Returns the files written.
+save_ard_per_output <- function(ard, dir, log = NULL) {
+  ids <- run_execute_ard_ids(ard)
+  if (!length(ids)) return(character(0))
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  oid_col <- vapply(ard[["output_id"]], function(x)
+    if (length(x)) as.character(x[[1]]) else NA_character_, character(1))
+  written <- character(0)
+  for (oid in ids) {
+    sub <- ard[which(oid_col == oid), , drop = FALSE]
+    f <- file.path(dir, paste0(gsub("[^A-Za-z0-9._-]+", "_", oid), ".csv"))
+    utils::write.csv(flatten_ard(sub), f, row.names = FALSE)
+    written <- c(written, f)
+    if (!is.null(log)) log(sprintf("Saved per-output ARD: ard/%s", basename(f)))
+  }
+  written
+}
+
 ## Flatten an ARS ARD (list-columns) to a plain data.frame for CSV export.
 flatten_ard <- function(ard) {
   df <- as.data.frame(ard, stringsAsFactors = FALSE)

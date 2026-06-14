@@ -47,6 +47,20 @@ local_output_dir <- function(study_id = NULL, root = getwd()) {
   d
 }
 
+## Pretty-print the generated ARS JSON for the in-app spec inspector. This is
+## the teaching surface: it shows exactly what arsbridge built from the shell,
+## so a wrong table (e.g. a flag used as a grouping instead of a where-filter)
+## is visible in the spec, not just in the rendered output.
+read_ars_pretty <- function(ars_path) {
+  if (is.null(ars_path) || !file.exists(ars_path))
+    return("(no ARS spec yet -- run Step 3)")
+  txt <- tryCatch(jsonlite::prettify(paste(readLines(ars_path, warn = FALSE),
+                                            collapse = "\n")),
+                  error = function(e) paste(readLines(ars_path, warn = FALSE),
+                                            collapse = "\n"))
+  as.character(txt)
+}
+
 ## Flatten an ARS ARD (list-columns) to a plain data.frame for CSV export.
 flatten_ard <- function(ard) {
   df <- as.data.frame(ard, stringsAsFactors = FALSE)

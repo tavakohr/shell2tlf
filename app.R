@@ -117,8 +117,17 @@ ui <- page_sidebar(
                        icon = icon("gears"), class = "btn-primary"),
           downloadButton("dl_ars", "Download ARS JSON", class = "btn-outline-secondary"),
           hr(),
-          h6("Validation report"),
-          DT::DTOutput("validation_tbl")
+          navset_tab(
+            nav_panel("Validation report", DT::DTOutput("validation_tbl")),
+            nav_panel("Generated ARS spec (JSON)",
+              div(class = "small text-muted my-2",
+                  "This is exactly what arsbridge built from your shell. ",
+                  "If a table renders wrong, the cause is visible here — e.g. a ",
+                  "flag like ", tags$code("RANDFL"), " used as a grouping ",
+                  "(level 'Y' becomes a column) instead of a where-filter."),
+              div(style = "max-height:420px; overflow:auto;",
+                  verbatimTextOutput("ars_json")))
+          )
         )
       ),
       div(actionButton("back_s2", "← Back"),
@@ -347,6 +356,7 @@ server <- function(input, output, session) {
   output$validation_tbl <- DT::renderDT({
     req(rv$validation); DT::datatable(rv$validation, options = list(pageLength = 8, scrollX = TRUE))
   })
+  output$ars_json <- renderText({ req(rv$ars_path); read_ars_pretty(rv$ars_path) })
   output$dl_ars <- downloadHandler(
     filename = function() "reporting_event.json",
     content = function(file) { req(rv$ars_path); file.copy(rv$ars_path, file) })

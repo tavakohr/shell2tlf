@@ -39,6 +39,27 @@ renv::restore()
 shiny::runApp()
 ```
 
+If `renv::restore()` does not install everything (it does **not** always pull
+`arsbridge`, which lives on GitHub rather than CRAN), run the bundled installer
+instead and then launch:
+
+```r
+source("setup.R")     # installs all CRAN deps + arsbridge from GitHub
+shiny::runApp()
+```
+
+### Troubleshooting
+
+- **`Error in library(arsbridge) : there is no package called 'arsbridge'`** —
+  the GitHub package was not installed. Fix it in one line, then re-run:
+  ```r
+  remotes::install_github("tavakohr/arsbridge")
+  ```
+  or run `source("setup.R")`.
+- **`renv::status()` reports a package "used: n"** (e.g. a stray recorded
+  package) — harmless; it just means the lockfile records something the app
+  does not import. It does not stop the app.
+
 The app opens in your browser. Work top-to-bottom through the five steps in the
 sidebar.
 

@@ -17,13 +17,25 @@ with_log <- function(expr, log = NULL) {
   )
 }
 
+## Copy `src` -> `dir/as_name`, failing loudly if the source is missing or the
+## copy does not land. Returns the destination path. Use everywhere an input is
+## staged so a bad copy surfaces here, not as a cryptic error two steps later.
+copy_in <- function(src, dir, as_name, what = as_name) {
+  if (length(src) != 1 || is.na(src) || !nzchar(src))
+    stop(sprintf("%s: no source path (is arsbridge installed correctly?).", what))
+  if (!file.exists(src))
+    stop(sprintf("%s: source not found at %s", what, src))
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  dest <- file.path(dir, as_name)
+  if (!isTRUE(file.copy(src, dest, overwrite = TRUE)) || !file.exists(dest))
+    stop(sprintf("%s: failed to copy into %s", what, dir))
+  dest
+}
+
 ## Copy a Shiny upload (datapath + name) to `dir`, preserving the real name.
 stash_upload <- function(upload, dir, as_name = NULL) {
   if (is.null(upload)) return(NULL)
-  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
-  dest <- file.path(dir, as_name %||% upload$name)
-  file.copy(upload$datapath, dest, overwrite = TRUE)
-  dest
+  copy_in(upload$datapath, dir, as_name %||% upload$name, what = upload$name)
 }
 
 ## Unzip an ADaM data archive and return the directory that holds the datasets.

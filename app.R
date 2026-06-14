@@ -234,21 +234,26 @@ server <- function(input, output, session) {
   observeEvent(input$up_empty, rv$empty <- stash_upload(input$up_empty, in_dir))
 
   observeEvent(input$load_example, {
-    rv$shell    <- file.copy(arsbridge_example("annotated_shell.docx"),
-                             file.path(in_dir, "annotated_shell.docx"), overwrite = TRUE) |>
-                   (\(x) file.path(in_dir, "annotated_shell.docx"))()
-    rv$spec     <- { file.copy(arsbridge_example("adam_spec.xlsx"),
-                               file.path(in_dir, "adam_spec.xlsx"), overwrite = TRUE)
-                     file.path(in_dir, "adam_spec.xlsx") }
-    rv$data_zip <- { file.copy(arsbridge_example("ADaM.zip"),
-                               file.path(in_dir, "ADaM.zip"), overwrite = TRUE)
-                     file.path(in_dir, "ADaM.zip") }
-    updateTextInput(session, "study_id", value = "APX-DRM-301")
-    updateTextInput(session, "study_name",
-                    value = "PROSVALIN Phase 3 in Atopic Dermatitis (training example)")
-    addlog("Loaded bundled APX-DRM-301 example (shell + ADaM spec + ADaM data).")
-    showNotification("Bundled example loaded. Set your LLM key on Step 2.",
-                     type = "message")
+    tryCatch({
+      rv$shell    <- copy_in(arsbridge_example("annotated_shell.docx"),
+                             in_dir, "annotated_shell.docx", "Annotated shell")
+      rv$spec     <- copy_in(arsbridge_example("adam_spec.xlsx"),
+                             in_dir, "adam_spec.xlsx", "ADaM spec")
+      rv$data_zip <- copy_in(arsbridge_example("ADaM.zip"),
+                             in_dir, "ADaM.zip", "ADaM data")
+      updateTextInput(session, "study_id", value = "APX-DRM-301")
+      updateTextInput(session, "study_name",
+                      value = "PROSVALIN Phase 3 in Atopic Dermatitis (training example)")
+      addlog("Loaded bundled APX-DRM-301 example (shell + ADaM spec + ADaM data).")
+      showNotification("Bundled example loaded. Set your LLM key on Step 2.",
+                       type = "message")
+    }, error = function(e) {
+      rv$shell <- NULL; rv$spec <- NULL; rv$data_zip <- NULL
+      addlog(paste("ERROR loading example:", conditionMessage(e)))
+      showNotification(paste("Could not load bundled example:", conditionMessage(e),
+                             "— check that arsbridge is installed (renv::restore())."),
+                       type = "error", duration = NULL)
+    })
   })
 
   output$upload_summary <- renderUI({

@@ -22,6 +22,9 @@ tmp_*.R
 # generated per-study TLF outputs (json, ard.csv, docx)
 outputs/
 
+# example ADaM datasets -- regenerated from the arsbridge bundle by setup.R
+ADaM/
+
 # secrets — never commit a key
 .Renviron
 .env

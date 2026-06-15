@@ -55,7 +55,36 @@ if ("arsbridge" %nin% rownames(installed.packages())) {
   message("arsbridge already installed (", as.character(packageVersion("arsbridge")), ").")
 }
 
-## --- 3. Verify everything loads --------------------------------------------
+## --- 3. Materialise the example ADaM datasets ------------------------------
+## Unpack the ADaM.zip that ships INSIDE the arsbridge package into a local
+## ./ADaM folder, so the loose .xpt files are available for inspection and
+## ad-hoc runs without re-downloading. The package bundle is the single source
+## of truth -- this folder is always regenerated from it (never hand-edited),
+## so it stays in lockstep with whatever arsbridge version is installed.
+setup_example_adam <- function(dest = "ADaM") {
+  if (!requireNamespace("arsbridge", quietly = TRUE)) {
+    message("arsbridge not installed -- skipping ADaM example extraction.")
+    return(invisible(NULL))
+  }
+  zip_path <- arsbridge::arsbridge_example("ADaM.zip")
+  if (!nzchar(zip_path) || !file.exists(zip_path)) {
+    message("arsbridge example ADaM.zip not found -- skipping.")
+    return(invisible(NULL))
+  }
+  ## Regenerate cleanly: drop any previous (possibly stale) extraction.
+  if (dir.exists(dest)) unlink(dest, recursive = TRUE, force = TRUE)
+  dir.create(dest, showWarnings = FALSE, recursive = TRUE)
+  utils::unzip(zip_path, exdir = dest)
+  xpt <- list.files(dest, pattern = "\\.xpt$", full.names = FALSE,
+                    recursive = TRUE, ignore.case = TRUE)
+  message(sprintf("Extracted %d ADaM .xpt file%s from the arsbridge bundle to %s/",
+                  length(xpt), if (length(xpt) == 1) "" else "s",
+                  normalizePath(dest, winslash = "/", mustWork = FALSE)))
+  invisible(normalizePath(dest, winslash = "/", mustWork = FALSE))
+}
+setup_example_adam("ADaM")
+
+## --- 4. Verify everything loads --------------------------------------------
 need_load <- c("shiny", "bslib", "DT", "gt", "tfrmt", "cards", "flextable",
                "officer", "ggplot2", "arsbridge")
 ok <- vapply(need_load, requireNamespace, logical(1), quietly = TRUE)

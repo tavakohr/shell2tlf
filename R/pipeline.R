@@ -214,6 +214,7 @@ run_generate_ars <- function(shell_path, adam_spec_path, provider, api_key,
     code_dir    = res$code_dir,
     code_paths  = res$code_paths,
     validation  = res$validation,
+    blockers    = res$blockers,
     n_tlfs      = res$n_tlfs %||% NA_integer_,
     n_analyses  = res$n_analyses %||% NA_integer_,
     n_warnings  = res$n_warnings %||% NA_integer_,
@@ -233,11 +234,12 @@ run_execute_ard <- function(ars_path, adam_dir, log = NULL) {
   }
   ard <- with_log(arsbridge::ars_to_ard(ars_path, adam_dir), log = log)
   diagnostics <- tryCatch(arsbridge::ars_diagnostics(), error = function(e) NULL)
+  blockers <- tryCatch(arsbridge::ars_blockers(diagnostics), error = function(e) NULL)
   flat <- function(col) vapply(col, function(x)
     if (length(x)) as.character(x[[1]]) else NA_character_, character(1))
   out_ids <- if (!is.null(ard)) unique(stats::na.omit(flat(ard[["output_id"]]))) else character(0)
-  list(ard = ard, diagnostics = diagnostics, output_ids = out_ids,
-       n_rows = if (is.null(ard)) 0L else nrow(ard))
+  list(ard = ard, diagnostics = diagnostics, blockers = blockers,
+       output_ids = out_ids, n_rows = if (is.null(ard)) 0L else nrow(ard))
 }
 
 ## ---- Stage 4: Render TLFs -> Word ------------------------------------------

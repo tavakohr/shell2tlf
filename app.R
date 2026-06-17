@@ -255,6 +255,27 @@ server <- function(input, output, session) {
     rv$log <- c(rv$log, unlist(list(...)))
   }
 
+  ## Surface arsbridge blocking gaps (FAIL findings from ars_blockers()):
+  ## log each in plain English (which input doc + problem + how to fix) and
+  ## raise a prominent notification. Falls back to `ok_msg` when clean.
+  flag_blockers <- function(blockers, ok_msg) {
+    if (!is.null(blockers) && nrow(blockers) > 0) {
+      for (i in seq_len(nrow(blockers))) {
+        addlog(sprintf("BLOCKER [%s]: %s %s",
+                       blockers$input[i] %||% NA, blockers$problem[i],
+                       blockers$action[i] %||% ""))
+      }
+      showNotification(
+        sprintf(paste0("%d blocking gap(s) -- the ARS/ARD/R code may be ",
+                       "incomplete. See the Diagnostics tab or the ",
+                       "'What to fix first' sheet of the report."),
+                nrow(blockers)),
+        type = "error", duration = 14)
+    } else {
+      showNotification(ok_msg, type = "message")
+    }
+  }
+
   ## ---- progress sidebar ----
   output$progress_list <- renderUI({
     done <- c(
@@ -397,6 +418,7 @@ server <- function(input, output, session) {
           log = addlog)
         rv$ars_path   <- gen$ars_path
         rv$validation <- gen$validation
+        rv$blockers   <- gen$blockers
         rv$code_dir   <- dirs$code
         addlog(sprintf("ARS ready: %s TLFs, %s analyses, %s warnings.",
                        gen$n_tlfs, gen$n_analyses, gen$n_warnings))
@@ -410,7 +432,7 @@ server <- function(input, output, session) {
         addlog(sprintf("Saved ARS spec to %s/ars and %d cards script(s) to code/",
                        normalizePath(dirs$root, mustWork = FALSE),
                        length(gen$code_paths)))
-        showNotification("ARS JSON generated.", type = "message")
+        flag_blockers(gen$blockers, "ARS JSON generated.")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("ARS generation failed:", conditionMessage(e)), type = "error") })
     })
@@ -440,6 +462,7 @@ server <- function(input, output, session) {
         rv$adam_dir <- prepare_adam_dir(rv$data_zip, file.path(work, "adam"))
         exec <- run_execute_ard(rv$ars_path, rv$adam_dir, log = addlog)
         rv$ard <- exec$ard; rv$exec <- exec; rv$output_ids <- exec$output_ids
+        rv$blockers <- exec$blockers
         addlog(sprintf("ARD built: %s rows across %s outputs.",
                        exec$n_rows, length(exec$output_ids)))
         ## Persist the flattened ARD as CSV for inspection.
@@ -449,7 +472,7 @@ server <- function(input, output, session) {
         per <- save_ard_per_output(exec$ard, dirs$ard, log = addlog)
         addlog(sprintf("Saved combined ARD + %d per-output ARD(s) under %s",
                        length(per), dirs$ard))
-        showNotification("ARD generated.", type = "message")
+        flag_blockers(exec$blockers, "ARD generated.")
       }, error = function(e) { addlog(paste("ERROR:", conditionMessage(e)))
         showNotification(paste("ARD execution failed:", conditionMessage(e)), type = "error") })
     })

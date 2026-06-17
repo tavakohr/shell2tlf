@@ -662,6 +662,18 @@ server <- function(input, output, session) {
     updateTextAreaInput(session, "lab5_code", value = gen_lab5()))
 
   observeEvent(input$run_lab4, {
+    req(rv$ars_path, rv$data_zip)
+    ## The code lab can run before the Stage-3 execute step, so adam_dir may
+    ## still be NULL. Unzip the ADaM archive lazily (same as run_ard) -- an
+    ## ars_to_ard(adam_dir = NULL) call otherwise dies with "invalid filename
+    ## argument".
+    if (is.null(rv$adam_dir)) {
+      rv$adam_dir <- tryCatch(
+        prepare_adam_dir(rv$data_zip, file.path(work, "adam")),
+        error = function(e) {
+          addlog(paste("ADaM prep failed:", conditionMessage(e))); NULL
+        })
+    }
     addlog("Code lab: running ars_to_ard()...")
     res <- withProgress(message = "Running your code (ars_to_ard)...",
                         value = 0.5,
@@ -685,6 +697,14 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$run_lab5, {
+    req(rv$ars_path, rv$data_zip)
+    if (is.null(rv$adam_dir)) {
+      rv$adam_dir <- tryCatch(
+        prepare_adam_dir(rv$data_zip, file.path(work, "adam")),
+        error = function(e) {
+          addlog(paste("ADaM prep failed:", conditionMessage(e))); NULL
+        })
+    }
     addlog("Code lab: running render...")
     res <- withProgress(message = "Running your code (render)...", value = 0.5,
       run_code_console(input$lab5_code,

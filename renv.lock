@@ -253,7 +253,7 @@
       "RemoteUsername": "tavakohr",
       "RemoteRepo": "arsbridge",
       "RemoteRef": "main",
-      "RemoteSha": "ec1c94949398f4c10a141a6c3758229c42a4df43"
+      "RemoteSha": "53e2626e73fb20e516aacb2d0de14a85529ec378"
     },
     "askpass": {
       "Package": "askpass",
